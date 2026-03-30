@@ -8,6 +8,13 @@ export async function fetchStatus(): Promise<StatusResponse> {
   return res.json();
 }
 
+export async function deleteIndex(): Promise<void> {
+  const res = await fetch(`${API_BASE}/index`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete index');
+}
+
 export interface SearchParams {
   q: string;
   type?: MessageType;

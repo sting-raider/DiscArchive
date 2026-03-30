@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchStatus } from '../lib/api';
+import { fetchStatus, deleteIndex } from '../lib/api';
 import { ImportPathInput } from '../components/ImportPathInput';
 import { useImport } from '../hooks/useImport';
 import { ProgressScreen } from '../components/ProgressScreen';
@@ -171,9 +171,30 @@ export function SetupPage() {
         )}
       </div>
 
+      {/* Danger Zone */}
+      {status?.meilisearch && (
+        <div className="mt-8">
+          <button
+            onClick={async () => {
+              if (window.confirm('Are you sure you want to delete all indexed data? This action cannot be undone.')) {
+                try {
+                  await deleteIndex();
+                  window.location.reload();
+                } catch (err) {
+                  alert('Failed to delete data');
+                }
+              }
+            }}
+            className="px-3 py-1.5 rounded bg-red/10 border border-red/20 text-red text-xs hover:bg-red/20 transition-colors"
+          >
+            Delete All Data
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="mt-12 text-center text-[10px] text-text-tertiary font-mono">
-        Powered by ⚡ Meilisearch · 100% local · MIT License
+        Powered by ⚡ Meilisearch · 100% local
       </footer>
     </div>
   );
