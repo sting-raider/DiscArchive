@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchStatus, deleteIndex } from '../lib/api';
 import { SearchBar } from '../components/SearchBar';
@@ -16,7 +16,6 @@ export function SearchPage() {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [reverseSearchImage, setReverseSearchImage] = useState<string | null>(null);
   const [showReverseSearch, setShowReverseSearch] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const {
     query, setQuery,
@@ -45,22 +44,8 @@ export function SearchPage() {
       });
   }, [navigate]);
 
-  // Infinite scroll observer
-  const lastElementRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (isLoading) return;
-      if (observerRef.current) observerRef.current.disconnect();
-
-      observerRef.current = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting && hasMore) {
-          loadMore();
-        }
-      });
-
-      if (node) observerRef.current.observe(node);
-    },
-    [isLoading, hasMore, loadMore],
-  );
+  // We removed the IntersectionObserver to allow the Per Page slider to strictly dictate
+  // the exact number of visible items per page load without automatic fetching.
 
   const hasQuery = query.length > 0 || type !== 'all' || author || dateFrom || dateTo;
 
@@ -235,11 +220,8 @@ export function SearchPage() {
             {/* Result cards */}
             {results.length > 0 && (
               <div className="space-y-2.5">
-                {results.map((msg, index) => (
-                  <div
-                    key={msg.id}
-                    ref={index === results.length - 1 ? lastElementRef : undefined}
-                  >
+                {results.map((msg) => (
+                  <div key={msg.id}>
                     <ResultCard
                       message={msg}
                       onImageClick={(url) => setModalImage(url)}
@@ -252,6 +234,18 @@ export function SearchPage() {
                   <div className="flex items-center justify-center py-4 gap-2 text-text-tertiary text-xs">
                     <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                     Loading more...
+                  </div>
+                )}
+
+                {/* Manual Load More Button */}
+                {hasMore && !isLoading && results.length > 0 && (
+                  <div className="flex justify-center py-6">
+                    <button
+                      onClick={loadMore}
+                      className="px-6 py-2.5 rounded-xl font-medium text-sm border border-[rgba(255,255,255,0.1)] bg-surface hover:bg-surface2 transition-colors duration-200 text-text-primary shadow-sm"
+                    >
+                      Load More
+                    </button>
                   </div>
                 )}
 

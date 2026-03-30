@@ -14,7 +14,7 @@ if not exist venv (
     python -m venv venv
 )
 call venv\Scripts\activate
-pip install -r requirements.txt -q
+pip install -r requirements.txt
 start /b uvicorn main:app --port 8000
 cd ..
 
@@ -22,7 +22,7 @@ echo   Setting up frontend...
 cd frontend
 if not exist node_modules (
     echo  Installing frontend dependencies...
-    call pnpm install --silent
+    call pnpm install
 )
 start /b pnpm dev
 cd ..
