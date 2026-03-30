@@ -1,7 +1,8 @@
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
 meilisearch==0.31.0
-ijson==3.2.3
+ijson[yajl2_cffi]==3.2.3
+python-dateutil==2.8.2
 python-dotenv==1.0.1
 python-multipart==0.0.9
 httpx==0.27.0

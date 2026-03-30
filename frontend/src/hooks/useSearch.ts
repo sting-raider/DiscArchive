@@ -22,6 +22,8 @@ interface UseSearchReturn {
   setDateFrom: (d: string) => void;
   dateTo: string;
   setDateTo: (d: string) => void;
+  perPage: number;
+  setPerPage: (p: number) => void;
   sort: SortOrder;
   setSort: (s: SortOrder) => void;
   hasMore: boolean;
@@ -42,9 +44,9 @@ export function useSearch(): UseSearchReturn {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sort, setSort] = useState<SortOrder>('relevance');
+  const [perPage, setPerPage] = useState(20);
 
   const debouncedQuery = useDebounce(query, 250);
-  const perPage = 20;
   const isLoadingMore = useRef(false);
 
   const performSearch = useCallback(async (searchPage: number, append: boolean = false) => {
@@ -79,7 +81,7 @@ export function useSearch(): UseSearchReturn {
       setIsLoading(false);
       isLoadingMore.current = false;
     }
-  }, [debouncedQuery, type, author, dateFrom, dateTo, sort]);
+  }, [debouncedQuery, type, author, dateFrom, dateTo, sort, perPage]);
 
   // Reset page and search when filters change
   useEffect(() => {
@@ -91,7 +93,7 @@ export function useSearch(): UseSearchReturn {
       setTotal(0);
       setProcessingTime(0);
     }
-  }, [debouncedQuery, type, author, dateFrom, dateTo, sort, performSearch]);
+  }, [debouncedQuery, type, author, dateFrom, dateTo, sort, perPage, performSearch]);
 
   const hasMore = results.length < total;
 
@@ -112,6 +114,7 @@ export function useSearch(): UseSearchReturn {
     author, setAuthor,
     dateFrom, setDateFrom,
     dateTo, setDateTo,
+    perPage, setPerPage,
     sort, setSort,
     hasMore, loadMore,
   };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchAuthors } from '../lib/api';
-import type { Author, MessageType, SortOrder } from '../types/message';
+import type { Author, MessageType, SortOrder, Message } from '../types/message';
 
 interface FilterBarProps {
   type: MessageType;
@@ -13,6 +13,9 @@ interface FilterBarProps {
   onDateToChange: (date: string) => void;
   sort: SortOrder;
   onSortChange: (sort: SortOrder) => void;
+  perPage: number;
+  onPerPageChange: (val: number) => void;
+  currentResults: Message[];
 }
 
 const TYPE_OPTIONS: { value: MessageType; label: string; icon: string }[] = [
@@ -36,15 +39,48 @@ export function FilterBar({
   dateFrom, onDateFromChange,
   dateTo, onDateToChange,
   sort, onSortChange,
+  perPage, onPerPageChange,
+  currentResults,
 }: FilterBarProps) {
   const [authors, setAuthors] = useState<Author[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [localPerPage, setLocalPerPage] = useState(perPage);
 
   useEffect(() => {
     fetchAuthors()
       .then(setAuthors)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setLocalPerPage(perPage);
+  }, [perPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localPerPage !== perPage) {
+        onPerPageChange(localPerPage);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localPerPage, perPage, onPerPageChange]);
+
+  const handleDownloadAll = () => {
+    const urls = currentResults.flatMap(m => m.attachment_urls).filter(Boolean);
+    if (urls.length === 0) return;
+    
+    urls.forEach((url, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, i * 200);
+    });
+  };
 
   return (
     <div className="space-y-3 animate-fade-in">
@@ -159,6 +195,55 @@ export function FilterBar({
           )}
         </div>
       )}
+
+      {/* Results per page & Download actions row */}
+      <div className="flex items-end gap-4 p-3 rounded-xl bg-surface border border-[rgba(255,255,255,0.07)]">
+        {/* Results per page slider */}
+        <div className="flex flex-col gap-1 flex-1 max-w-[200px]">
+          <label className="flex items-center justify-between text-[10px] uppercase tracking-widest text-text-tertiary font-mono">
+            <span>Per Page</span>
+            <input
+              type="number"
+              min={1}
+              max={6767}
+              value={localPerPage}
+              onChange={(e) => {
+                let v = parseInt(e.target.value, 10);
+                if (isNaN(v)) return;
+                if (v > 6767) v = 6767;
+                if (v < 1) v = 1;
+                setLocalPerPage(v);
+              }}
+              className="w-12 bg-transparent text-right text-text-secondary outline-none"
+            />
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={6767}
+            value={localPerPage}
+            onChange={(e) => setLocalPerPage(parseInt(e.target.value, 10))}
+            className="w-full h-1 mt-1.5 bg-surface2 rounded-lg appearance-none cursor-pointer border border-[rgba(255,255,255,0.07)] accent-accent"
+          />
+        </div>
+
+        {/* Download all visible */}
+        {(type === 'image' || type === 'video') && currentResults.length > 0 && (
+          <div className="ml-auto">
+            <button
+              onClick={handleDownloadAll}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent-soft text-accent hover:bg-accent/20 transition-colors border border-accent/30 flex items-center gap-2"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7,10 12,15 17,10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download Visible
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { reverseImageSearch } from '../lib/api';
+import { useState, useRef } from 'react';
+import { reverseImageSearch, reverseImageSearchFile } from '../lib/api';
 
 interface ReverseImageSearchProps {
   isOpen: boolean;
@@ -19,15 +19,26 @@ export function ReverseImageSearch({ isOpen, onClose, imageUrl, onResultClick }:
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  
+  const [file, setFile] = useState<File | null>(null);
+  const [pasteUrl, setPasteUrl] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = async () => {
-    if (!imageUrl) return;
+    if (!imageUrl && !pasteUrl && !file) return;
     setIsLoading(true);
     setError(null);
     setHasSearched(true);
 
     try {
-      const data = await reverseImageSearch(imageUrl);
+      let data;
+      if (imageUrl) {
+         data = await reverseImageSearch(imageUrl);
+      } else if (file) {
+         data = await reverseImageSearchFile(file);
+      } else {
+         data = await reverseImageSearch(pasteUrl);
+      }
       setResults(data.results);
     } catch (err) {
       if (err instanceof Error && err.message === 'clip_unavailable') {
@@ -61,7 +72,7 @@ export function ReverseImageSearch({ isOpen, onClose, imageUrl, onResultClick }:
       </div>
 
       {/* Query image */}
-      {imageUrl && (
+      {imageUrl ? (
         <div className="p-4 border-b border-[rgba(255,255,255,0.07)]">
           <p className="text-[10px] uppercase tracking-widest text-text-tertiary font-mono mb-2">
             Query Image
@@ -79,6 +90,49 @@ export function ReverseImageSearch({ isOpen, onClose, imageUrl, onResultClick }:
               Search similar images
             </button>
           )}
+        </div>
+      ) : (
+        <div className="p-4 border-b border-[rgba(255,255,255,0.07)] flex flex-col gap-3">
+           <p className="text-[10px] uppercase tracking-widest text-text-tertiary font-mono">
+             Search by URL or File
+           </p>
+           
+           <input 
+             type="text" 
+             placeholder="Paste image URL here..." 
+             className="w-full bg-surface2 border border-[rgba(255,255,255,0.07)] rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent"
+             value={pasteUrl}
+             onChange={e => { setPasteUrl(e.target.value); setFile(null); }}
+           />
+           
+           <div className="text-center font-mono text-[10px] text-text-tertiary uppercase">— or —</div>
+           
+           <input 
+             type="file" 
+             accept="image/*" 
+             className="hidden" 
+             ref={fileInputRef}
+             onChange={e => {
+                if (e.target.files && e.target.files[0]) {
+                   setFile(e.target.files[0]);
+                   setPasteUrl('');
+                }
+             }}
+           />
+           <button 
+             onClick={() => fileInputRef.current?.click()}
+             className={`w-full py-2 rounded-lg text-xs border border-dashed transition-colors ${file ? 'border-accent text-accent bg-accent/10' : 'border-[rgba(255,255,255,0.14)] text-text-secondary hover:border-accent'}`}
+           >
+             {file ? file.name : 'Upload image file'}
+           </button>
+
+           <button
+             onClick={doSearch}
+             disabled={!file && !pasteUrl}
+             className="mt-2 w-full py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+           >
+             Search
+           </button>
         </div>
       )}
 

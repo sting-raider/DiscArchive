@@ -8,13 +8,39 @@ import json
 import zipfile
 import tempfile
 import time
+import asyncio
 from pathlib import Path
 from typing import AsyncGenerator
 from datetime import datetime
+import threading
 
 import ijson
+import httpx
 import meilisearch
+from dateutil import parser as dtparser
 
+# ---------------------------------------------------------------------------
+# Background CLIP processing hook
+# ---------------------------------------------------------------------------
+def submit_image_embedding_task(message_id: str, image_url: str):
+    """
+    Submits a background task to compute and store CLIP embedding.
+    We don't await this so it doesn't block ingestion.
+    """
+    try:
+        from clip_search import compute_embedding_from_url, store_embedding
+    except ImportError:
+        return # CLIP not enabled or installed
+    
+    def worker():
+        try:
+            emb = compute_embedding_from_url(image_url)
+            if emb is not None:
+                store_embedding(message_id, image_url, emb)
+        except Exception:
+            pass
+            
+    threading.Thread(target=worker, daemon=True).start()
 
 # ---------------------------------------------------------------------------
 # Meilisearch index configuration
@@ -47,128 +73,124 @@ INDEX_CONFIG = {
     ],
 }
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif"}
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".mkv"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp", ".tiff", ".svg"}
+VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".flv", ".wmv"}
 
-BATCH_SIZE = 1000
-
+BATCH_SIZE = 5000
 
 # ---------------------------------------------------------------------------
 # Message parsing
 # ---------------------------------------------------------------------------
-def classify_type(msg: dict) -> str:
-    """Determine message type from attachments, embeds, stickers."""
-    attachments = msg.get("attachments") or []
-    embeds = msg.get("embeds") or []
-    stickers = msg.get("stickers") or []
-
+def detect_type(attachments, embeds, stickers):
     for att in attachments:
-        url = (att.get("url") or att.get("fileName") or "").lower()
-        ext = Path(url).suffix
-        if ext in IMAGE_EXTENSIONS:
+        url = (att.get("url") or att.get("proxyUrl") or "").lower().split("?")[0].strip()
+        fname = (att.get("fileName") or att.get("filename") or "").lower().strip()
+        ext = os.path.splitext(url)[1] or os.path.splitext(fname)[1]
+        if ext in IMAGE_EXTS:
             return "image"
-        if ext in VIDEO_EXTENSIONS:
+        if ext in VIDEO_EXTS:
             return "video"
-        return "file"
+        # Fallback check inside string if OS path fails
+        for ext_check in IMAGE_EXTS:
+            if url.endswith(ext_check) or fname.endswith(ext_check):
+                return "image"
+        for ext_check in VIDEO_EXTS:
+            if url.endswith(ext_check) or fname.endswith(ext_check):
+                return "video"
 
     if stickers:
-        for sticker in stickers:
-            if sticker.get("sourceUrl") or sticker.get("url"):
+        for s in stickers:
+            if s.get("url") or s.get("sourceUrl"):
                 return "image"
 
     for embed in embeds:
-        if embed.get("url"):
+        if embed.get("type") == "video":
+            return "video"
+        if embed.get("type") == "image":
+            return "image"
+        if embed.get("url") or embed.get("thumbnail"):
             return "link"
+
+    if attachments:
+        return "file"
 
     return "message"
 
-
-def parse_message(msg: dict) -> dict:
-    """Convert a DiscordChatExporter message object into a flat document."""
+def parse_message(msg):
     author = msg.get("author") or {}
     attachments = msg.get("attachments") or []
     embeds = msg.get("embeds") or []
-    reactions = msg.get("reactions") or []
-    reference = msg.get("reference") or {}
     stickers = msg.get("stickers") or []
+    reference = msg.get("reference")
 
-    # Timestamp parsing
-    timestamp_raw = msg.get("timestamp") or msg.get("timestampEdited") or ""
+    author_name = author.get("nickname") or author.get("name") or "Unknown"
+
+    attachment_urls = [a.get("url", "") for a in attachments]
+    attachment_names = [a.get("fileName", "") for a in attachments]
+    attachment_sizes = [a.get("fileSizeBytes", 0) for a in attachments]
+
+    reply_to_id = reference.get("messageId") if reference else None
+
+    msg_type = detect_type(attachments, embeds, stickers)
+
     try:
-        dt = datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00"))
-        timestamp_unix = int(dt.timestamp())
-        timestamp_iso = dt.isoformat()
+        ts = dtparser.parse(msg["timestamp"])
+        timestamp_unix = int(ts.timestamp())
+        timestamp_iso = msg["timestamp"]
     except Exception:
         timestamp_unix = 0
-        timestamp_iso = timestamp_raw
+        timestamp_iso = msg.get("timestamp", "")
 
-    # Attachment info
-    att_urls = []
-    att_names = []
-    att_sizes = []
-    for att in attachments:
-        att_urls.append(att.get("url", ""))
-        att_names.append(att.get("fileName", ""))
-        att_sizes.append(att.get("fileSizeBytes", 0))
-
-    # Sticker URLs as attachments
-    for sticker in stickers:
-        surl = sticker.get("sourceUrl") or sticker.get("url") or ""
-        if surl:
-            att_urls.append(surl)
-            att_names.append(sticker.get("name", "sticker"))
-            att_sizes.append(0)
-
-    # First embed info
-    first_embed = embeds[0] if embeds else {}
-
-    # Reactions formatted
-    reaction_strs = []
-    for r in reactions:
-        emoji = r.get("emoji", {})
-        emoji_name = emoji.get("name", "") if isinstance(emoji, dict) else str(emoji)
-        count = r.get("count", 1)
-        reaction_strs.append(f"{emoji_name} ×{count}")
-
-    msg_type = classify_type(msg)
-
-    return {
+    doc = {
         "id": str(msg.get("id", "")),
         "content": msg.get("content") or "",
-        "author_name": author.get("nickname") or author.get("name") or "Unknown",
+        "author_name": author_name,
         "author_id": str(author.get("id", "")),
-        "avatar_url": author.get("avatarUrl") or "",
+        "avatar_url": author.get("avatarUrl", ""),
         "timestamp": timestamp_unix,
         "timestamp_iso": timestamp_iso,
         "type": msg_type,
-        "attachment_urls": att_urls,
-        "attachment_names": att_names,
-        "attachment_sizes": att_sizes,
-        "embed_title": first_embed.get("title"),
-        "embed_url": first_embed.get("url"),
-        "embed_thumbnail": (first_embed.get("thumbnail") or {}).get("url")
-            if isinstance(first_embed.get("thumbnail"), dict)
-            else first_embed.get("thumbnail"),
-        "embed_description": first_embed.get("description"),
-        "reactions": reaction_strs,
-        "has_attachment": len(att_urls) > 0,
+        "message_type": msg.get("type", "Default"),
+        "attachment_urls": attachment_urls,
+        "attachment_names": attachment_names,
+        "attachment_sizes": attachment_sizes,
+        "embed_title": embeds[0].get("title") if embeds else None,
+        "embed_url": embeds[0].get("url") if embeds else None,
+        "embed_thumbnail": (embeds[0].get("thumbnail") or {}).get("url") if embeds else None,
+        "embed_description": embeds[0].get("description") if embeds else None,
+        "reactions": [
+            f"{r['emoji']['name']} ×{r['count']}"
+            for r in msg.get("reactions", [])
+            if r.get("emoji") and r.get("count")
+        ],
+        "has_attachment": len(attachments) > 0,
         "has_embed": len(embeds) > 0,
-        "reply_to_id": str(reference.get("messageId", "")) if reference.get("messageId") else None,
+        "reply_to_id": str(reply_to_id) if reply_to_id else None,
+        "is_pinned": msg.get("isPinned", False),
+        "mentions": [m.get("nickname") or m.get("name") for m in msg.get("mentions", [])],
     }
 
+    # If it's an image, queue background embedding
+    if msg_type == "image":
+        img_url = next((u for u in attachment_urls if os.path.splitext(u.lower().split("?")[0])[1] in IMAGE_EXTS), None)
+        if not img_url:
+             if stickers:
+                 img_url = stickers[0].get("url") or stickers[0].get("sourceUrl")
+             elif embeds and embeds[0].get("type") == "image":
+                 img_url = embeds[0].get("url")
+        if img_url and doc.get("id"):
+            submit_image_embedding_task(doc["id"], img_url)
 
-# ---------------------------------------------------------------------------
-# Counting messages in file (first pass with ijson)
-# ---------------------------------------------------------------------------
+    return doc
+
+
 def count_messages_in_file(file_path: Path) -> int:
-    """Quick count of messages array length via ijson."""
     count = 0
     try:
         with open(file_path, "rb") as f:
             for _ in ijson.items(f, "messages.item"):
                 count += 1
     except Exception:
-        # Try as root-level array
         try:
             with open(file_path, "rb") as f:
                 for _ in ijson.items(f, "item"):
@@ -177,12 +199,7 @@ def count_messages_in_file(file_path: Path) -> int:
             pass
     return count
 
-
-# ---------------------------------------------------------------------------
-# Streaming ingestion
-# ---------------------------------------------------------------------------
 def ensure_index(client: meilisearch.Client, index_name: str):
-    """Create the index if it doesn't exist and configure it."""
     try:
         client.get_index(index_name)
     except Exception:
@@ -190,119 +207,159 @@ def ensure_index(client: meilisearch.Client, index_name: str):
         client.wait_for_task(task.task_uid, timeout_in_ms=30000)
 
     idx = client.get_index(index_name)
-
-    # Apply settings
     task = idx.update_searchable_attributes(INDEX_CONFIG["searchableAttributes"])
     client.wait_for_task(task.task_uid, timeout_in_ms=30000)
-
     task = idx.update_filterable_attributes(INDEX_CONFIG["filterableAttributes"])
     client.wait_for_task(task.task_uid, timeout_in_ms=30000)
-
     task = idx.update_sortable_attributes(INDEX_CONFIG["sortableAttributes"])
     client.wait_for_task(task.task_uid, timeout_in_ms=30000)
-
     task = idx.update_ranking_rules(INDEX_CONFIG["rankingRules"])
     client.wait_for_task(task.task_uid, timeout_in_ms=30000)
 
 
-def ingest_json_file(client: meilisearch.Client, file_path: Path, index_name: str, total: int):
-    """
-    Generator that yields progress events as it parses and indexes.
-    """
-    idx = client.get_index(index_name)
-    batch = []
-    processed = 0
-    skipped = 0
-    start_time = time.time()
-
-    def try_parse_stream(path, prefix):
-        nonlocal batch, processed, skipped
-        with open(path, "rb") as f:
-            for msg in ijson.items(f, prefix):
-                try:
-                    doc = parse_message(msg)
-                    if not doc["id"]:
+async def ingest_file_async(file_path: Path, index_name: str, total: int):
+    # This generator yields status updates while parsing in a background thread and batches to Meili concurrently
+    queue = asyncio.Queue(maxsize=10) # 10 chunks buffer
+    
+    loop = asyncio.get_running_loop()
+    
+    # Thread parsing
+    def parser_thread():
+        batch = []
+        skipped = 0
+        def try_parse(prefix):
+            nonlocal batch, skipped
+            with open(file_path, "rb") as f:
+                for msg in ijson.items(f, prefix):
+                    try:
+                        doc = parse_message(msg)
+                        if not doc.get("id"):
+                            skipped += 1
+                            continue
+                        batch.append(doc)
+                        if len(batch) >= BATCH_SIZE:
+                            asyncio.run_coroutine_threadsafe(queue.put((list(batch), skipped)), loop).result()
+                            batch.clear()
+                    except Exception:
                         skipped += 1
-                        continue
-                    batch.append(doc)
-                    processed += 1
-
-                    if len(batch) >= BATCH_SIZE:
-                        task = idx.add_documents(batch)
-                        batch = []
-                        yield {
-                            "event": "progress",
-                            "data": {
-                                "processed": processed,
-                                "total": total,
-                                "percent": min(int((processed / max(total, 1)) * 100), 99),
-                                "phase": "indexing",
-                            },
-                        }
-                except Exception:
-                    skipped += 1
-
-    # Try messages.item first (DiscordChatExporter format), then root array
-    found = False
-    try:
-        for event in try_parse_stream(file_path, "messages.item"):
-            found = True
-            yield event
-    except Exception:
-        pass
-
-    if not found or processed == 0:
+        
+        # Determine format
+        found = False
         try:
-            for event in try_parse_stream(file_path, "item"):
-                yield event
+            with open(file_path, "rb") as f:
+                next(ijson.items(f, "messages.item"))
+            found = True
+        except StopIteration:
+            found = True
+        except Exception:
+            pass
+            
+        try:
+            if found:
+                try_parse("messages.item")
+            else:
+                try_parse("item")
         except Exception as e:
-            yield {
-                "event": "error",
-                "data": {"message": f"Failed to parse JSON: {str(e)}"},
-            }
+            asyncio.run_coroutine_threadsafe(queue.put({"error": str(e)}), loop).result()
             return
+            
+        if batch:
+            asyncio.run_coroutine_threadsafe(queue.put((list(batch), skipped)), loop).result()
+            
+        # EOF signal
+        asyncio.run_coroutine_threadsafe(queue.put(None), loop).result()
 
-    # Final batch
-    if batch:
-        idx.add_documents(batch)
+    t = threading.Thread(target=parser_thread, daemon=True)
+    t.start()
+
+    semaphore = asyncio.Semaphore(4)
+    tasks = []
+    processed = 0
+    final_skipped = 0
+    
+    # Temporarily disable ranking rules during ingestion
+    meili_url = os.environ.get("MEILI_HOST", "http://localhost:7700")
+    meili_key = os.environ.get("MEILI_MASTER_KEY", "masterKey")
+    headers = {"Authorization": f"Bearer {meili_key}", "Content-Type": "application/json"}
+    
+    async with httpx.AsyncClient(timeout=120.0) as http:
+        # 1. Disable ranking rules
+        try:
+            await http.put(f"{meili_url}/indexes/{index_name}/settings/ranking-rules", json=[], headers=headers)
+        except Exception as e:
+            print("Failed to disable ranking rules:", e)
+            
+        async def post_batch(chunk):
+            async with semaphore:
+                resp = await http.post(f"{meili_url}/indexes/{index_name}/documents", json=chunk, headers=headers)
+                resp.raise_for_status()
+
+        start_time = time.time()
+        
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, dict) and "error" in item:
+                yield {"event": "error", "data": {"message": item["error"]}}
+                return
+                
+            chunk, skipped = item
+            final_skipped = skipped
+            processed += len(chunk)
+            
+            task = asyncio.create_task(post_batch(chunk))
+            tasks.append(task)
+            
+            # periodic yield
+            yield {
+                "event": "progress",
+                "data": {
+                    "processed": processed,
+                    "total": total,
+                    "percent": min(int((processed / max(total, 1)) * 100), 99),
+                    "phase": "indexing",
+                },
+            }
+            
+            # cleanup finished tasks
+            tasks = [t for t in tasks if not t.done()]
+            
+        # Wait for remaining tasks to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 2. Restore ranking rules
+        try:
+            await http.put(
+                f"{meili_url}/indexes/{index_name}/settings/ranking-rules",
+                json=INDEX_CONFIG["rankingRules"],
+                headers=headers
+            )
+        except Exception:
+            pass
 
     duration = round(time.time() - start_time, 1)
 
     yield {
         "event": "progress",
-        "data": {
-            "processed": processed,
-            "total": total,
-            "percent": 100,
-            "phase": "indexing",
-        },
+        "data": {"processed": processed, "total": total, "percent": 100, "phase": "indexing"},
     }
 
     yield {
         "event": "done",
-        "data": {
-            "indexed": processed,
-            "skipped": skipped,
-            "duration_s": duration,
-        },
+        "data": {"indexed": processed, "skipped": final_skipped, "duration_s": duration},
     }
-
 
 async def stream_ingest(
     client: meilisearch.Client,
     file_path: Path,
     index_name: str,
 ) -> AsyncGenerator[dict, None]:
-    """
-    Async generator that handles both .json and .zip files.
-    Yields SSE-compatible event dicts.
-    """
     ensure_index(client, index_name)
 
     json_files = []
-
     if file_path.suffix.lower() == ".zip":
-        # Extract JSON files from zip
         tmpdir = tempfile.mkdtemp()
         try:
             with zipfile.ZipFile(file_path, "r") as zf:
@@ -320,22 +377,17 @@ async def stream_ingest(
         yield {"event": "error", "data": {"message": "No JSON files found"}}
         return
 
-    # Count phase
     yield {"event": "progress", "data": {"processed": 0, "total": 0, "percent": 0, "phase": "counting"}}
 
-    total = 0
-    for jf in json_files:
-        total += count_messages_in_file(jf)
+    # Count synchronously in a thread to not block event loop
+    def _count():
+        return sum(count_messages_in_file(jf) for jf in json_files)
+        
+    loop = asyncio.get_running_loop()
+    total = await loop.run_in_executor(None, _count)
 
     yield {"event": "progress", "data": {"processed": 0, "total": total, "percent": 0, "phase": "parsing"}}
 
-    # Ingest each file
     for jf in json_files:
-        for event in ingest_json_file(client, jf, index_name, total):
+        async for event in ingest_file_async(jf, index_name, total):
             yield event
-            # Small yield to keep the event loop responsive
-            await asyncio.sleep(0)
-
-
-# Need asyncio import at top
-import asyncio  # noqa: E402

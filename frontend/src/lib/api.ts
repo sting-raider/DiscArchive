@@ -126,3 +126,23 @@ export async function reverseImageSearch(imageUrl: string): Promise<{
   }
   return res.json();
 }
+
+export async function reverseImageSearchFile(file: File): Promise<{
+  results: Array<{ message_id: string; image_url: string; similarity: number }>;
+}> {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const res = await fetch(`${API_BASE}/reverse-image-search`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (data.error === 'clip_unavailable') {
+      throw new Error('clip_unavailable');
+    }
+    throw new Error('Reverse image search failed');
+  }
+  return res.json();
+}

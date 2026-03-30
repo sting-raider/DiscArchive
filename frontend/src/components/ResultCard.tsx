@@ -145,49 +145,74 @@ export function ResultCard({ message, onImageClick }: ResultCardProps) {
 
 function ImageContent({ message, onImageClick }: { message: Message; onImageClick?: (url: string) => void }) {
   const [brokenImages, setBrokenImages] = useState<Set<number>>(new Set());
-  const imageUrls = message.attachment_urls.filter((_, i) => {
-    const name = (message.attachment_names[i] || '').toLowerCase();
-    const ext = name.split('.').pop() || '';
-    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext) || !name;
-  });
+  
+  const images = message.attachment_urls
+    .map((url, i) => ({
+      url,
+      name: message.attachment_names[i] || 'image',
+      size: message.attachment_sizes[i] || 0,
+      originalIndex: i
+    }))
+    .filter((att) => {
+      const ext = att.name.toLowerCase().split('.').pop() || '';
+      return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'tiff'].includes(ext) || !att.name;
+    });
 
-  if (imageUrls.length === 0) return null;
+  if (images.length === 0) return null;
 
-  const gridClass = imageUrls.length === 1
-    ? 'grid-cols-1'
-    : 'grid-cols-2';
+  const gridClass = images.length === 1 ? 'grid-cols-1' : 'grid-cols-2';
 
   return (
-    <div className={`grid ${gridClass} gap-1.5 mt-2.5 max-w-md`}>
-      {imageUrls.slice(0, 4).map((url, i) => (
+    <div className={`grid ${gridClass} gap-1.5 mt-2.5 max-w-lg`}>
+      {images.slice(0, 4).map((img, i) => (
         <div
           key={i}
-          className="relative overflow-hidden rounded-lg bg-surface2 aspect-square cursor-pointer group/img"
-          onClick={() => onImageClick?.(url)}
+          className="relative overflow-hidden rounded-lg bg-surface2 aspect-square group/img cursor-pointer"
         >
           {brokenImages.has(i) ? (
-            <div className="w-full h-full flex items-center justify-center text-text-tertiary text-xs">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <div className="w-full h-full flex flex-col items-center justify-center p-4 text-center border border-[rgba(255,255,255,0.05)]">
+              <svg className="mb-2 text-text-tertiary" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                 <circle cx="8.5" cy="8.5" r="1.5" />
                 <path d="m21 15-5-5L5 21" />
               </svg>
+              <span className="text-xs text-text-secondary font-mono truncate w-full">{img.name}</span>
             </div>
           ) : (
             <img
-              src={url}
-              alt={message.attachment_names[i] || 'image'}
-              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-200"
+              src={img.url}
+              alt={img.name}
+              className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
               onError={() => setBrokenImages(prev => new Set(prev).add(i))}
+              onClick={() => onImageClick?.(img.url)}
               loading="lazy"
             />
           )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors duration-150 flex items-center justify-center">
-            <svg className="w-6 h-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-            </svg>
+          
+          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/40 transition-colors duration-200 pointer-events-none flex flex-col justify-end p-3">
+            <div className="opacity-0 group-hover/img:opacity-100 transition-opacity translate-y-2 group-hover/img:translate-y-0 duration-200">
+               <p className="text-white text-xs font-medium truncate drop-shadow-md">{img.name}</p>
+               {img.size > 0 && (
+                 <p className="text-white/70 text-[10px] font-mono mt-0.5">{formatFileSize(img.size)}</p>
+               )}
+            </div>
           </div>
+
+          <a
+            href={img.url}
+            download={img.name}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="absolute top-2 right-2 p-1.5 rounded-md bg-black/50 hover:bg-black/80 text-white opacity-0 group-hover/img:opacity-100 transition-opacity z-10"
+            title="Download"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7,10 12,15 17,10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </a>
         </div>
       ))}
     </div>
@@ -195,31 +220,54 @@ function ImageContent({ message, onImageClick }: { message: Message; onImageClic
 }
 
 function VideoContent({ message }: { message: Message }) {
-  const videoUrl = message.attachment_urls[0];
-  const fileName = message.attachment_names[0] || 'video';
-  const fileSize = message.attachment_sizes[0];
+  const videoUrls = message.attachment_urls.map((url, i) => ({
+    url,
+    name: message.attachment_names[i] || 'video',
+    size: message.attachment_sizes[i] || 0
+  })).filter(att => {
+    const ext = att.name.toLowerCase().split('.').pop() || '';
+    return ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', 'flv', 'wmv'].includes(ext);
+  });
+
+  if (videoUrls.length === 0) return null;
+  const vid = videoUrls[0]; 
 
   return (
-    <div className="mt-2.5 space-y-2">
-      <div className="flex items-center gap-2 text-xs text-text-secondary">
-        <span className="text-accent">🎬</span>
-        <span className="font-mono truncate">{fileName}</span>
-        {fileSize > 0 && (
-          <span className="px-1.5 py-0.5 rounded bg-surface2 text-text-tertiary text-[10px]">
-            {formatFileSize(fileSize)}
-          </span>
-        )}
-      </div>
-      {videoUrl && (
+    <div className="mt-2.5 space-y-2 max-w-md w-full">
+      {vid.url && (
         <video
-          src={videoUrl}
+          src={vid.url}
           controls
+          muted
           preload="metadata"
-          className="rounded-lg max-w-md w-full bg-black"
+          className="rounded-lg w-full bg-black/10 border border-[rgba(255,255,255,0.05)]"
         >
           Your browser does not support the video tag.
         </video>
       )}
+      <div className="flex items-center gap-2 text-xs text-text-secondary bg-surface2 rounded-lg p-2 border border-[rgba(255,255,255,0.05)]">
+        <span className="text-accent shrink-0">🎬</span>
+        <span className="font-mono truncate flex-1">{vid.name}</span>
+        {vid.size > 0 && (
+          <span className="px-1.5 py-0.5 rounded bg-surface3 text-text-tertiary text-[10px] shrink-0">
+            {formatFileSize(vid.size)}
+          </span>
+        )}
+        <a
+          href={vid.url}
+          download={vid.name}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 rounded hover:bg-surface3 text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+          title="Download"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+             <polyline points="7,10 12,15 17,10" />
+             <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+        </a>
+      </div>
     </div>
   );
 }

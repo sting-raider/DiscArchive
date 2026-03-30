@@ -85,7 +85,7 @@ CLIP_AVAILABLE = check_clip_available()
 
 
 @app.get("/api/status")
-async def status():
+def status():
     client = get_meili_client()
     meili_ok = client is not None
 
@@ -130,7 +130,7 @@ async def status():
 
 
 @app.delete("/api/index")
-async def delete_index():
+def delete_index():
     client = get_meili_client()
     if client is None:
         raise HTTPException(status_code=503, detail="Meilisearch is not available")
@@ -202,7 +202,7 @@ async def import_data(request: Request):
 
 
 @app.get("/api/search")
-async def search(
+def search(
     q: str = Query("", description="Search query"),
     type: Optional[str] = Query(None, description="Message type filter"),
     author: Optional[str] = Query(None, description="Author name filter"),
@@ -212,7 +212,7 @@ async def search(
     has_embed: Optional[bool] = Query(None),
     sort: Optional[str] = Query(None, description="Sort: relevance|newest|oldest"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
+    per_page: int = Query(20, ge=1, le=6767),
 ):
     idx = get_index()
     if idx is None:
@@ -277,7 +277,7 @@ async def search(
 
 
 @app.get("/api/authors")
-async def get_authors():
+def authors():
     idx = get_index()
     if idx is None:
         raise HTTPException(status_code=503, detail="Index not available")
@@ -314,9 +314,12 @@ async def reverse_image_search(
 
     if "multipart" in content_type and image:
         image_bytes = await image.read()
-    else:
-        body = await request.json()
-        image_url = body.get("image_url")
+    elif "application/json" in content_type:
+        try:
+            body = await request.json()
+            image_url = body.get("image_url")
+        except Exception:
+            pass
 
     if not image_url and not image_bytes:
         raise HTTPException(status_code=400, detail="Provide image_url or upload an image")

@@ -6,9 +6,10 @@ interface SearchBarProps {
   placeholder?: string;
   autoFocus?: boolean;
   size?: 'large' | 'normal';
+  onImageSearch?: () => void;
 }
 
-export function SearchBar({ value, onChange, placeholder, autoFocus = false, size = 'normal' }: SearchBarProps) {
+export function SearchBar({ value, onChange, placeholder, autoFocus = false, size = 'normal', onImageSearch }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -54,6 +55,19 @@ export function SearchBar({ value, onChange, placeholder, autoFocus = false, siz
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
+
+      {onImageSearch && (
+        <button
+          onClick={onImageSearch}
+          className={`absolute right-${value ? '10' : '3'} top-1/2 -translate-y-1/2 p-1.5 rounded-md text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors duration-120`}
+          title="Search by image"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
           </svg>
         </button>
       )}

@@ -27,6 +27,7 @@ export function SearchPage() {
     dateFrom, setDateFrom,
     dateTo, setDateTo,
     sort, setSort,
+    perPage, setPerPage,
     hasMore, loadMore,
   } = useSearch();
 
@@ -87,6 +88,10 @@ export function SearchPage() {
               onChange={setQuery}
               autoFocus
               size="large"
+              onImageSearch={() => {
+                setReverseSearchImage(null);
+                setShowReverseSearch(true);
+              }}
             />
           </div>
 
@@ -103,6 +108,9 @@ export function SearchPage() {
               onDateToChange={setDateTo}
               sort={sort}
               onSortChange={setSort}
+              perPage={perPage}
+              onPerPageChange={setPerPage}
+              currentResults={results}
             />
           </div>
 
@@ -144,12 +152,23 @@ export function SearchPage() {
                 >
                   DiscArchive
                 </button>
-                <SearchBar
-                  value={query}
-                  onChange={setQuery}
-                  autoFocus
-                  size="normal"
-                />
+                <div className="flex-1 max-w-2xl relative">
+                  <SearchBar
+                    value={query}
+                    onChange={setQuery}
+                    autoFocus
+                    size="normal"
+                    onImageSearch={() => {
+                      setReverseSearchImage(null);
+                      setShowReverseSearch(true);
+                    }}
+                  />
+                  <div className="absolute -bottom-6 w-full text-center">
+                     <span className="text-[10px] text-accent/80 font-mono">
+                        ✨ Type detection improved. <a href="/setup" className="underline hover:text-accent">Re-import your JSON</a> to fix old classifications.
+                     </span>
+                  </div>
+                </div>
               </div>
 
               {/* Filters */}
@@ -165,6 +184,9 @@ export function SearchPage() {
                   onDateToChange={setDateTo}
                   sort={sort}
                   onSortChange={setSort}
+                  perPage={perPage}
+                  onPerPageChange={setPerPage}
+                  currentResults={results}
                 />
               </div>
 

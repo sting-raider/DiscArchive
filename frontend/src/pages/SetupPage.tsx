@@ -86,7 +86,7 @@ export function SetupPage() {
             value={filePath}
             onChange={setFilePath}
             onSubmit={startIngestion}
-            disabled={!status?.meilisearch}
+            disabled={status?.meilisearch === false || statusError}
           />
         )}
 
