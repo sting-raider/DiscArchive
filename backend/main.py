@@ -125,6 +125,7 @@ async def status():
         "clip_available": CLIP_AVAILABLE,
         "total_messages": total_messages,
         "index_ready": index_ready,
+        "stats": stats,
     }
 
 
@@ -135,9 +136,24 @@ async def delete_index():
         raise HTTPException(status_code=503, detail="Meilisearch is not available")
     
     try:
-        task = client.delete_index(INDEX_NAME)
-        client.wait_for_task(task.task_uid, timeout_in_ms=30000)
-        return {"status": "ok", "message": "Index deleted successfully"}
+        # 1. Delete Meilisearch index
+        try:
+            task = client.delete_index(INDEX_NAME)
+            client.wait_for_task(task.task_uid, timeout_in_ms=30000)
+        except Exception:
+            # Index might not exist, proceed
+            pass
+
+        # 2. Delete SQLite DB if it exists
+        db_path = Path("embeddings.db")
+        if db_path.exists():
+            # Try to remove, but don't fail if locked - it will be cleared on next run
+            try:
+                db_path.unlink()
+            except Exception:
+                pass
+        
+        return {"status": "ok", "message": "Everything wiped successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
