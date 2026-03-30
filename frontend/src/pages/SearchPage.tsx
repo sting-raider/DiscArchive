@@ -163,11 +163,6 @@ export function SearchPage() {
                       setShowReverseSearch(true);
                     }}
                   />
-                  <div className="absolute -bottom-6 w-full text-center">
-                     <span className="text-[10px] text-accent/80 font-mono">
-                        ✨ Type detection improved. <a href="/setup" className="underline hover:text-accent">Re-import your JSON</a> to fix old classifications.
-                     </span>
-                  </div>
                 </div>
               </div>
 
