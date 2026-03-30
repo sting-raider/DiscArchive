@@ -4,17 +4,6 @@ setlocal enabledelayedexpansion
 echo 🚀 Starting DiscArchive — Discord Group DM Search
 echo.
 
-:: 1. Ask for JSON path if not provided
-set /p JSON_PATH="📁 Paste the full path to your Discord export JSON or ZIP: "
-
-if "%JSON_PATH%"=="" (
-    echo ⚠️  No path provided. You will need to paste it in the browser.
-) else (
-    set "AUTO_IMPORT_PATH=%JSON_PATH%"
-    echo ✅ Path set to: %JSON_PATH%
-)
-
-echo.
 echo 📦 Starting Meilisearch...
 docker-compose up -d
 

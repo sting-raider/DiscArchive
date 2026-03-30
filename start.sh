@@ -2,17 +2,6 @@
 echo "🚀 Starting DiscArchive — Discord Group DM Search"
 echo ""
 
-# 1. Ask for JSON path if not provided
-read -p "📁 Paste the full path to your Discord export JSON or ZIP (or press Enter): " JSON_PATH
-
-if [ -z "$JSON_PATH" ]; then
-    echo "⚠️  No path provided. You can paste it in the browser later."
-else
-    export AUTO_IMPORT_PATH="$JSON_PATH"
-    echo "✅ Path set to: $JSON_PATH"
-fi
-
-echo ""
 # Start Meilisearch
 echo "📦 Starting Meilisearch..."
 docker-compose up -d
