@@ -205,12 +205,12 @@ export function FilterBar({
             <input
               type="number"
               min={1}
-              max={6767}
+              max={1000000}
               value={localPerPage}
               onChange={(e) => {
                 let v = parseInt(e.target.value, 10);
                 if (isNaN(v)) return;
-                if (v > 6767) v = 6767;
+                if (v > 1000000) v = 1000000;
                 if (v < 1) v = 1;
                 setLocalPerPage(v);
               }}
@@ -220,7 +220,7 @@ export function FilterBar({
           <input
             type="range"
             min={1}
-            max={6767}
+            max={10000}
             value={localPerPage}
             onChange={(e) => setLocalPerPage(parseInt(e.target.value, 10))}
             className="w-full h-1 mt-1.5 bg-surface2 rounded-lg appearance-none cursor-pointer border border-[rgba(255,255,255,0.07)] accent-accent"

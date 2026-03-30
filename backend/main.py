@@ -212,7 +212,7 @@ def search(
     has_embed: Optional[bool] = Query(None),
     sort: Optional[str] = Query(None, description="Sort: relevance|newest|oldest"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=6767),
+    per_page: int = Query(20, ge=1, le=1000000),
 ):
     idx = get_index()
     if idx is None:
